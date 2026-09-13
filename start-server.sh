@@ -3,15 +3,18 @@
 set -e
 
 echo "=========================================="
-echo " T-CLOUD UBUNTU SERVER"
+echo "       T-CLOUD UBUNTU SERVER"
 echo "=========================================="
 
 mkdir -p /run/sshd
 
-echo "Starting SSH..."
+echo "Starting SSH service..."
+
+ssh-keygen -A
 
 /usr/sbin/sshd
 
+echo ""
 echo "SSH: RUNNING"
 
 echo ""
@@ -40,8 +43,7 @@ ip addr
 
 echo ""
 echo "=========================================="
-echo " SERVER READY"
+echo "       SERVER READY"
 echo "=========================================="
 
-# إبقاء الحاوية حية
 exec tail -f /dev/null
