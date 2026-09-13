@@ -27,10 +27,8 @@ RUN apt-get update && apt-get install -y \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# SSH
 RUN mkdir -p /run/sshd
 
-# مستخدم الخادم
 RUN useradd \
     -m \
     -s /bin/bash \
@@ -41,13 +39,16 @@ RUN echo "cloud ALL=(ALL) NOPASSWD:ALL" \
 
 RUN chmod 0440 /etc/sudoers.d/cloud
 
-# إعداد SSH
 RUN sed -i \
     's/#PermitRootLogin prohibit-password/PermitRootLogin no/' \
     /etc/ssh/sshd_config
 
 RUN sed -i \
     's/#PasswordAuthentication yes/PasswordAuthentication no/' \
+    /etc/ssh/sshd_config
+
+RUN sed -i \
+    's/PasswordAuthentication yes/PasswordAuthentication no/' \
     /etc/ssh/sshd_config
 
 WORKDIR /workspace
