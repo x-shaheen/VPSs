@@ -1,46 +1,70 @@
-name: T-Cloud Ephemeral Engine
+name: T-Cloud Ephemeral Server
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
       - main
+
   schedule:
     - cron: "0 */6 * * *"
 
 jobs:
-  build:
+  cloud-server:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 350
 
     steps:
+
+      # ==========================================
+      # 1. Initialize Ubuntu Runner
+      # ==========================================
+
       - name: Initialize Cloud Server
         run: |
           set -e
 
           echo "=========================================="
-          echo "Starting Cloud Server"
+          echo " T-CLOUD SERVER"
+          echo " Initializing Ubuntu environment"
           echo "=========================================="
 
           sudo systemctl start docker
           sudo systemctl enable docker
 
           sudo apt-get update
-          sudo apt-get install -y curl ca-certificates
 
+          sudo apt-get install -y \
+            curl \
+            ca-certificates \
+            git
+
+          echo ""
           echo "Docker:"
           docker --version
 
+          echo ""
           echo "Docker service:"
           sudo systemctl is-active docker
 
-          echo "Cloud server initialized successfully."
+      # ==========================================
+      # 2. Download Repository
+      # ==========================================
+
+      - name: Checkout Project
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # 3. Install Cloudflare Tunnel
+      # ==========================================
 
       - name: Install Cloudflare Tunnel
         run: |
           set -e
 
           echo "=========================================="
-          echo "Installing Cloudflare Tunnel"
+          echo " Installing Cloudflare Tunnel"
           echo "=========================================="
 
           curl -L \
@@ -51,10 +75,57 @@ jobs:
 
           sudo dpkg -i /tmp/cloudflared.deb
 
-          echo "Cloudflared:"
           cloudflared --version
 
-          echo "Cloudflare Tunnel installed successfully."
+      # ==========================================
+      # 4. Start Cloud Server Container
+      # ==========================================
+
+      - name: Build Cloud Server
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo " Building Cloud Server"
+          echo "=========================================="
+
+          docker build \
+            -t t-cloud-server:latest \
+            .
+
+      - name: Start Cloud Server
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo " Starting Cloud Server"
+          echo "=========================================="
+
+          docker rm -f t-cloud-server 2>/dev/null || true
+
+          docker volume create t-cloud-data
+
+          docker run -d \
+            --name t-cloud-server \
+            --restart unless-stopped \
+            -p 2222:22 \
+            -p 8080:8080 \
+            -v t-cloud-data:/workspace \
+            t-cloud-server:latest
+
+          echo ""
+          echo "Container:"
+          docker ps
+
+          echo ""
+          echo "Container IP:"
+          docker inspect \
+            -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+            t-cloud-server
+
+      # ==========================================
+      # 5. Start Cloudflare Tunnel
+      # ==========================================
 
       - name: Start Cloudflare Tunnel
         env:
@@ -63,11 +134,12 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "Starting Cloudflare Tunnel"
+          echo " Starting Cloudflare Tunnel"
           echo "=========================================="
 
           if [ -z "$TUNNEL_TOKEN" ]; then
-            echo "ERROR: CLOUDFLARE_TUNNEL_TOKEN is missing."
+            echo "ERROR:"
+            echo "CLOUDFLARE_TUNNEL_TOKEN is missing."
             exit 1
           fi
 
@@ -83,20 +155,69 @@ jobs:
 
           echo "$PID" > "$GITHUB_WORKSPACE/cloudflared.pid"
 
-          echo "Cloudflared PID: $PID"
+          echo "Cloudflare PID: $PID"
 
           sleep 10
 
           if sudo kill -0 "$PID" 2>/dev/null; then
-            echo "Cloudflare Tunnel process is running."
+            echo "Cloudflare Tunnel: RUNNING"
           else
-            echo "ERROR: Cloudflare Tunnel failed to start."
+            echo "Cloudflare Tunnel: FAILED"
+
             echo ""
             echo "========== CLOUDFLARED LOG =========="
+
             sudo tail -n 100 "$LOG_FILE" || true
-            echo "======================================"
+
+            echo "====================================="
+
             exit 1
           fi
+
+      # ==========================================
+      # 6. Server Information
+      # ==========================================
+
+      - name: Show Server Information
+        run: |
+          echo ""
+          echo "=========================================="
+          echo " T-CLOUD SERVER READY"
+          echo "=========================================="
+
+          echo ""
+          echo "Hostname:"
+          hostname
+
+          echo ""
+          echo "Kernel:"
+          uname -a
+
+          echo ""
+          echo "CPU:"
+          nproc
+
+          echo ""
+          echo "Memory:"
+          free -h
+
+          echo ""
+          echo "Disk:"
+          df -h /
+
+          echo ""
+          echo "Docker:"
+          docker ps
+
+          echo ""
+          echo "=========================================="
+          echo " Cloudflare:"
+          echo " https://shaheen94s.mooo.com"
+          echo "=========================================="
+
+      # ==========================================
+      # 7. Keep Server Alive
+      # ==========================================
 
       - name: Keep Server Alive
         env:
@@ -107,32 +228,34 @@ jobs:
           LOG_FILE="$GITHUB_WORKSPACE/cloudflared.log"
           PID_FILE="$GITHUB_WORKSPACE/cloudflared.pid"
 
+          echo ""
           echo "=========================================="
-          echo "T-Cloud Ephemeral Engine"
-          echo "Cloud server is active"
+          echo " T-CLOUD ENGINE ACTIVE"
           echo "=========================================="
 
-          for i in $(seq 1 350); do
+          for i in $(seq 1 330); do
 
             echo ""
-            echo "=========================================="
-            echo "Heartbeat: $i / 350"
+            echo "------------------------------------------"
+            echo "Heartbeat: $i / 330"
             echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            echo "=========================================="
+            echo "------------------------------------------"
+
+            # ------------------------------
+            # Check Cloudflare
+            # ------------------------------
 
             if [ -f "$PID_FILE" ]; then
 
               PID="$(cat "$PID_FILE")"
 
               if sudo kill -0 "$PID" 2>/dev/null; then
-
                 echo "Cloudflare Tunnel: RUNNING"
                 echo "PID: $PID"
-
               else
 
                 echo "Cloudflare Tunnel: STOPPED"
-                echo "Restarting Cloudflare Tunnel..."
+                echo "Restarting..."
 
                 sudo nohup cloudflared tunnel run \
                   --token "$TUNNEL_TOKEN" \
@@ -145,73 +268,92 @@ jobs:
                 sleep 10
 
                 if sudo kill -0 "$NEW_PID" 2>/dev/null; then
-                  echo "Cloudflare Tunnel restarted successfully."
+                  echo "Cloudflare Tunnel restarted."
                   echo "New PID: $NEW_PID"
                 else
-                  echo "WARNING: Cloudflare Tunnel restart failed."
-                  echo ""
-                  echo "========== CLOUDFLARED LOG =========="
-                  sudo tail -n 100 "$LOG_FILE" || true
-                  echo "======================================"
+                  echo "WARNING: Tunnel restart failed."
+                  sudo tail -n 50 "$LOG_FILE" || true
                 fi
-
               fi
 
             else
 
-              echo "PID file not found."
-              echo "Starting Cloudflare Tunnel..."
-
-              sudo nohup cloudflared tunnel run \
-                --token "$TUNNEL_TOKEN" \
-                >> "$LOG_FILE" 2>&1 &
-
-              NEW_PID=$!
-
-              echo "$NEW_PID" > "$PID_FILE"
-
-              sleep 10
+              echo "PID file missing."
 
             fi
+
+            # ------------------------------
+            # Check Docker
+            # ------------------------------
 
             if sudo systemctl is-active --quiet docker; then
               echo "Docker: RUNNING"
             else
+
               echo "Docker: STOPPED"
-              echo "Starting Docker..."
 
               sudo systemctl start docker
 
-              if sudo systemctl is-active --quiet docker; then
-                echo "Docker restarted successfully."
-              else
-                echo "WARNING: Docker could not be started."
-              fi
             fi
 
+            # ------------------------------
+            # Check Container
+            # ------------------------------
+
+            if docker ps --format '{{.Names}}' | grep -q "^t-cloud-server$"; then
+
+              echo "Cloud Container: RUNNING"
+
+            else
+
+              echo "Cloud Container: STOPPED"
+              echo "Restarting container..."
+
+              docker start t-cloud-server 2>/dev/null || true
+
+            fi
+
+            echo ""
             echo "Waiting 60 seconds..."
 
             sleep 60
 
           done
 
-          echo ""
-          echo "=========================================="
-          echo "Keep-alive period completed."
-          echo "=========================================="
+      # ==========================================
+      # 8. Diagnostics
+      # ==========================================
 
-      - name: Safe Cleanup
+      - name: Diagnostics
         if: always()
         run: |
           echo "=========================================="
-          echo "Cleaning up"
+          echo " T-CLOUD DIAGNOSTICS"
           echo "=========================================="
 
-          if [ -f "$GITHUB_WORKSPACE/cloudflared.pid" ]; then
-            PID="$(cat "$GITHUB_WORKSPACE/cloudflared.pid")"
-            sudo kill "$PID" 2>/dev/null || true
-          fi
+          echo ""
+          echo "Docker:"
+          docker ps -a || true
+
+          echo ""
+          echo "Container logs:"
+          docker logs --tail 100 t-cloud-server 2>/dev/null || true
+
+          echo ""
+          echo "Cloudflare logs:"
+          sudo tail -n 100 cloudflared.log 2>/dev/null || true
+
+      # ==========================================
+      # 9. Cleanup
+      # ==========================================
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Cleaning up..."
 
           sudo pkill -x cloudflared 2>/dev/null || true
+
+          docker stop t-cloud-server 2>/dev/null || true
 
           echo "Cleanup completed."
