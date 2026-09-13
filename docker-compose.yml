@@ -1,0 +1,25 @@
+services:
+
+  cloud-server:
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: t-cloud-server
+
+    restart: unless-stopped
+
+    ports:
+      - "2222:22"
+      - "8080:8080"
+
+    volumes:
+      - cloud-data:/workspace
+
+    environment:
+      TZ: UTC
+
+volumes:
+
+  cloud-data:
