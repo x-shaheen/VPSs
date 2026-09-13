@@ -14,23 +14,15 @@ jobs:
     timeout-minutes: 360
 
     steps:
-
       - name: Initialize Cloud Server
         run: |
           set -e
-
           echo "Starting Pre-installed Docker Service..."
-
           sudo systemctl start docker
           sudo systemctl enable docker
-
+          
           echo "Installing required utility packages..."
-
-          sudo apt-get update
-          sudo apt-get install -y tmux curl
-
-          echo "Docker version:"
-          docker --version
+          sudo apt-get update && sudo apt-get install -y tmux curl
 
       - name: Install Cloudflare Tunnel
         run: |
@@ -66,71 +58,42 @@ jobs:
           echo "Starting Cloudflare Tunnel..."
 
           tmux new-session -d -s cloudflare-tunnel \
-            "cloudflared tunnel run --token \"$CLOUDFLARE_TUNNEL_TOKEN\""
+            "cloudflared tunnel run --token '$CLOUDFLARE_TUNNEL_TOKEN'"
 
-          echo "Waiting for tunnel..."
           sleep 10
 
-          if pgrep -x cloudflared > /dev/null; then
-            echo "Cloudflare Tunnel started successfully."
-          else
-            echo "ERROR: Cloudflare Tunnel failed to start."
-            echo ""
-            echo "========== CLOUDFLARED LOG =========="
-            tmux capture-pane -t cloudflare-tunnel -p -S -100 || true
-            echo "====================================="
-            exit 1
-          fi
-
-      - name: Verify Cloudflare Tunnel
-        run: |
-          echo "Checking Cloudflare Tunnel process..."
-
-          pgrep -a cloudflared || {
-            echo "ERROR: cloudflared process not found."
-            exit 1
-          }
-
-          echo "Cloudflare Tunnel is running successfully."
+          echo "Tunnel process:"
+          pgrep -a cloudflared || true
 
       - name: Start Cloud Server
         run: |
           echo "======================================"
           echo "T-Cloud Ephemeral Engine"
-          echo "Cloud server is running."
+          echo "Cloud server is now running."
           echo "======================================"
 
+          echo "Docker status:"
           sudo systemctl --no-pager status docker || true
 
       - name: Keep Server Alive
         run: |
-          echo "======================================"
           echo "Server will remain active for up to 6 hours."
-          echo "======================================"
 
           for i in $(seq 1 360); do
-
             echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] Server is running..."
 
             if ! pgrep -x cloudflared > /dev/null; then
               echo "ERROR: Cloudflare Tunnel stopped."
-
-              echo ""
-              echo "========== CLOUDFLARED LOG =========="
-              tmux capture-pane -t cloudflare-tunnel -p -S -100 || true
-              echo "====================================="
-
               exit 1
             fi
 
             sleep 60
-
           done
 
       - name: Cleanup
         if: always()
         run: |
-          echo "Cleaning up..."
+          echo "Stopping Cloudflare Tunnel..."
 
           tmux kill-session -t cloudflare-tunnel 2>/dev/null || true
           sudo pkill cloudflared 2>/dev/null || true
