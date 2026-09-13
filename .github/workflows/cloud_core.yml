@@ -1,7 +1,130 @@
+name: T-Cloud Ephemeral Engine
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 */6 * * *"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Initialize Cloud Server
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "Starting Pre-installed Docker Service..."
+          echo "=========================================="
+
+          sudo systemctl start docker
+          sudo systemctl enable docker
+
+          echo "Installing required utility packages..."
+
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates
+
+          echo "Checking Docker..."
+
+          docker --version
+          sudo systemctl is-active --quiet docker
+
+          echo "Docker is running successfully."
+
+      - name: Install Cloudflare Tunnel
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "Installing Cloudflare Tunnel..."
+          echo "=========================================="
+
+          ARCH="$(dpkg --print-architecture)"
+
+          if [ "$ARCH" = "amd64" ]; then
+            PACKAGE="cloudflared-linux-amd64.deb"
+          elif [ "$ARCH" = "arm64" ]; then
+            PACKAGE="cloudflared-linux-arm64.deb"
+          else
+            echo "Unsupported architecture: $ARCH"
+            exit 1
+          fi
+
+          echo "Downloading cloudflared..."
+
+          curl -fL \
+            --retry 5 \
+            --retry-delay 2 \
+            --connect-timeout 20 \
+            -o /tmp/cloudflared.deb \
+            "https://github.com/cloudflare/cloudflared/releases/latest/download/$PACKAGE"
+
+          echo "Installing cloudflared..."
+
+          sudo dpkg -i /tmp/cloudflared.deb
+
+          echo "Checking installation..."
+
+          command -v cloudflared
+          cloudflared --version
+
+          echo "Cloudflared installed successfully."
+
+      - name: Start Cloudflare Tunnel
+        env:
+          TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "Starting Cloudflare Tunnel..."
+          echo "=========================================="
+
+          if [ -z "${TUNNEL_TOKEN:-}" ]; then
+            echo "ERROR: CLOUDFLARE_TUNNEL_TOKEN is missing."
+            echo "Add it in GitHub Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          LOG_FILE="$GITHUB_WORKSPACE/cloudflared.log"
+          PID_FILE="$GITHUB_WORKSPACE/cloudflared.pid"
+
+          rm -f "$LOG_FILE"
+          rm -f "$PID_FILE"
+
+          echo "Launching cloudflared..."
+
+          sudo nohup cloudflared tunnel run \
+            --token "$TUNNEL_TOKEN" \
+            > "$LOG_FILE" 2>&1 &
+
+          CLOUDFLARED_PID=$!
+
+          echo "$CLOUDFLARED_PID" > "$PID_FILE"
+
+          echo "Cloudflared PID: $CLOUDFLARED_PID"
+
+          sleep 10
+
+          if sudo kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
+            echo "Cloudflare Tunnel process is running."
+          else
+            echo "ERROR: Cloudflare Tunnel failed to start."
+            echo ""
+            echo "========== CLOUDFLARED LOG =========="
+            sudo tail -n 100 "$LOG_FILE" || true
+            echo "======================================"
+            exit 1
+          fi
+
       - name: Keep Server Alive
         env:
           TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-
         run: |
           set -u
 
@@ -9,61 +132,20 @@
           PID_FILE="$GITHUB_WORKSPACE/cloudflared.pid"
 
           echo "=========================================="
-          echo "🔥 T-Cloud Ephemeral Engine"
-          echo "🔥 الخادم السحابي نشط"
-          echo "🔥 Cloudflare Tunnel يعمل"
+          echo "T-Cloud Ephemeral Engine"
+          echo "Cloud server is active."
+          echo "Cloudflare Tunnel is active."
           echo "=========================================="
-
-          start_tunnel() {
-            echo ""
-            echo "=========================================="
-            echo "🚀 تشغيل Cloudflare Tunnel..."
-            echo "=========================================="
-
-            sudo nohup cloudflared tunnel run \
-              --token "$TUNNEL_TOKEN" \
-              >> "$LOG_FILE" 2>&1 &
-
-            NEW_PID=$!
-
-            echo "$NEW_PID" > "$PID_FILE"
-
-            echo "🆔 Cloudflared PID: $NEW_PID"
-
-            sleep 10
-
-            if sudo kill -0 "$NEW_PID" 2>/dev/null; then
-              echo "✅ عملية Cloudflare Tunnel تعمل."
-              return 0
-            fi
-
-            echo "❌ فشل تشغيل Cloudflare Tunnel."
-
-            echo ""
-            echo "========== CLOUDFLARED LOG =========="
-            sudo tail -n 100 "$LOG_FILE" || true
-            echo "======================================"
-
-            return 1
-          }
-
-          # ----------------------------------------------------------
-          # Main Keep-Alive Loop
-          # ----------------------------------------------------------
 
           for i in $(seq 1 350); do
 
-            CURRENT_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            CURRENT_TIME="$(date '+%Y-%m-%d %H:%M:%S UTC')"
 
             echo ""
             echo "=========================================="
-            echo "⏰ [$CURRENT_TIME]"
-            echo "💓 نبض السيرفر: $i / 350"
+            echo "Time: $CURRENT_TIME"
+            echo "Heartbeat: $i / 350"
             echo "=========================================="
-
-            # --------------------------------------------------------
-            # Cloudflare Tunnel Check
-            # --------------------------------------------------------
 
             TUNNEL_RUNNING=false
 
@@ -73,79 +155,75 @@
 
               if sudo kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
                 TUNNEL_RUNNING=true
-                echo "✅ Cloudflare Tunnel process: RUNNING"
-                echo "🆔 PID: $CLOUDFLARED_PID"
+                echo "Cloudflare Tunnel: RUNNING"
+                echo "PID: $CLOUDFLARED_PID"
               else
-                echo "⚠️ Cloudflare Tunnel process: STOPPED"
+                echo "Cloudflare Tunnel: STOPPED"
               fi
 
             else
 
-              echo "⚠️ PID file غير موجود."
+              echo "PID file not found."
 
             fi
-
-            # --------------------------------------------------------
-            # Restart Tunnel if Necessary
-            # --------------------------------------------------------
 
             if [ "$TUNNEL_RUNNING" = false ]; then
 
-              echo "🔄 محاولة إعادة تشغيل Cloudflare Tunnel..."
+              echo "Restarting Cloudflare Tunnel..."
 
-              if start_tunnel; then
-                echo "✅ تمت إعادة تشغيل النفق بنجاح."
+              sudo nohup cloudflared tunnel run \
+                --token "$TUNNEL_TOKEN" \
+                >> "$LOG_FILE" 2>&1 &
+
+              NEW_PID=$!
+
+              echo "$NEW_PID" > "$PID_FILE"
+
+              sleep 10
+
+              if sudo kill -0 "$NEW_PID" 2>/dev/null; then
+
+                echo "Cloudflare Tunnel restarted successfully."
+                echo "New PID: $NEW_PID"
+
               else
-                echo "⚠️ تعذر تشغيل النفق في هذه المحاولة."
-                echo "⏳ سيتم الانتظار ثم المحاولة مرة أخرى."
 
-                sleep 30
-                continue
+                echo "Cloudflare Tunnel restart failed."
+
+                echo ""
+                echo "========== CLOUDFLARED LOG =========="
+
+                sudo tail -n 100 "$LOG_FILE" || true
+
+                echo "======================================"
+
+                echo "The workflow will continue and retry."
+
               fi
 
             fi
 
-            # --------------------------------------------------------
-            # Docker Check
-            # --------------------------------------------------------
-
             if sudo systemctl is-active --quiet docker; then
 
-              echo "🐳 Docker: RUNNING"
+              echo "Docker: RUNNING"
 
             else
 
-              echo "⚠️ Docker: STOPPED"
-              echo "🔄 إعادة تشغيل Docker..."
+              echo "Docker: STOPPED"
+              echo "Restarting Docker..."
 
               sudo systemctl start docker
 
               if sudo systemctl is-active --quiet docker; then
-                echo "✅ Docker عاد للعمل."
+                echo "Docker restarted successfully."
               else
-                echo "❌ تعذر تشغيل Docker."
+                echo "Docker restart failed."
               fi
 
             fi
 
-            # --------------------------------------------------------
-            # Show Recent Tunnel Logs
-            # --------------------------------------------------------
-
-            if [ -f "$LOG_FILE" ]; then
-
-              echo ""
-              echo "📡 آخر حالة من Cloudflare Tunnel:"
-              sudo tail -n 5 "$LOG_FILE" || true
-
-            fi
-
-            # --------------------------------------------------------
-            # Wait Before Next Check
-            # --------------------------------------------------------
-
             echo ""
-            echo "⏳ الانتظار 60 ثانية قبل الفحص التالي..."
+            echo "Waiting 60 seconds..."
 
             sleep 60
 
@@ -153,5 +231,24 @@
 
           echo ""
           echo "=========================================="
-          echo "⏱️ انتهت دورة التشغيل."
+          echo "Keep-alive period completed."
           echo "=========================================="
+
+      - name: Safe Cleanup
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Cleaning up..."
+          echo "=========================================="
+
+          if [ -f "$GITHUB_WORKSPACE/cloudflared.pid" ]; then
+
+            CLOUDFLARED_PID="$(cat "$GITHUB_WORKSPACE/cloudflared.pid")"
+
+            sudo kill "$CLOUDFLARED_PID" 2>/dev/null || true
+
+          fi
+
+          sudo pkill -x cloudflared 2>/dev/null || true
+
+          echo "Cleanup completed."
