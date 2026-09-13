@@ -1,13 +1,7 @@
 {
-  "name": "my-cloud-server",
+  "name": "vpss",
   "main": "src/index.js",
   "compatibility_date": "2026-09-13",
-  "routes": [
-    {
-      "pattern": "shaheen94s.mooo.com/*",
-      "zone_name": "mooo.com"
-    }
-  ],
   "observability": {
     "enabled": true
   }
