@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: super-cloud-node
-    env: docker
-    repo: https://github.com
-    plan: free
-    region: frankfurt # اختيار أقرب مركز بيانات لسرعة خارقة
-    
