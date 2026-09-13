@@ -5,7 +5,7 @@
   "kv_namespaces": [
     {
       "binding": "MY_DATABASE",
-      "id": "YOUR_KV_NAMESPACE_ID"
+      "id": "6dca2ecf626b401fa34c1c6a04164aec"
     }
   ],
   "observability": {
