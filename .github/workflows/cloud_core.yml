@@ -4,9 +4,8 @@ on:
   push:
     branches:
       - main
-
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: '0 */6 * * *'
 
 jobs:
   build:
@@ -14,88 +13,54 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Initialize Cloud Server
-        run: |
-          set -e
-          echo "Starting Pre-installed Docker Service..."
-          sudo systemctl start docker
-          sudo systemctl enable docker
+    - name: Initialize Cloud Server
+      run: |
+        set -e
+        sudo systemctl start docker
+        sudo systemctl enable docker
+        sudo apt-get update && sudo apt-get install -y curl
+
+    - name: Install Cloudflare Tunnel
+      run: |
+        set -e
+        curl -L --output cloudflared.deb https://github.com
+        sudo dpkg -i cloudflared.deb
+
+    - name: Start Cloudflare Tunnel
+      env:
+        TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+      run: |
+        set -e
+        if [ -z "$TUNNEL_TOKEN" ]; then
+          echo "❌ خطأ: لم يتم العثور على CLOUDFLARE_TUNNEL_TOKEN في جيت هاب Secrets!"
+          exit 1
+        fi
+        echo "🚀 جاري تشغيل النفق مباشرة في الخلفية..."
+        sudo nohup cloudflared tunnel run --token "$TUNNEL_TOKEN" > cloudflared.log 2>&1 &
+        sleep 5
+        echo "=== مخرجات فحص تشغيل النفق ==="
+        cat cloudflared.log || true
+
+    - name: Keep Server Alive
+      env:
+        TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+      run: |
+        echo "=========================================="
+        echo " 🔥 الخادم السحابي يعمل الآن بكفاءة خارقة 🔥 "
+        echo "=========================================="
+        
+        for i in {1..350}; do
+          echo "⏰ نبض السيرفر مستمر... $(date)"
           
-          echo "Installing required utility packages..."
-          sudo apt-get update && sudo apt-get install -y tmux curl
-
-      - name: Install Cloudflare Tunnel
-        run: |
-          set -e
-
-          echo "Downloading cloudflared..."
-
-          curl -L \
-            --fail \
-            --silent \
-            --show-error \
-            -o cloudflared.deb \
-            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-
-          echo "Installing cloudflared..."
-
-          sudo dpkg -i cloudflared.deb
-
-          echo "Cloudflared version:"
-          cloudflared --version
-
-      - name: Start Cloudflare Tunnel
-        env:
-          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-        run: |
-          set -e
-
-          if [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
-            echo "ERROR: CLOUDFLARE_TUNNEL_TOKEN is not configured."
-            exit 1
+          if ! pgrep cloudflared > /dev/null; then
+            echo "⚠️ إعادة تشغيل النفق..."
+            sudo nohup cloudflared tunnel run --token "$TUNNEL_TOKEN" > cloudflared.log 2>&1 &
           fi
+          sleep 60
+        done
 
-          echo "Starting Cloudflare Tunnel..."
-
-          tmux new-session -d -s cloudflare-tunnel \
-            "cloudflared tunnel run --token '$CLOUDFLARE_TUNNEL_TOKEN'"
-
-          sleep 10
-
-          echo "Tunnel process:"
-          pgrep -a cloudflared || true
-
-      - name: Start Cloud Server
-        run: |
-          echo "======================================"
-          echo "T-Cloud Ephemeral Engine"
-          echo "Cloud server is now running."
-          echo "======================================"
-
-          echo "Docker status:"
-          sudo systemctl --no-pager status docker || true
-
-      - name: Keep Server Alive
-        run: |
-          echo "Server will remain active for up to 6 hours."
-
-          for i in $(seq 1 360); do
-            echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] Server is running..."
-
-            if ! pgrep -x cloudflared > /dev/null; then
-              echo "ERROR: Cloudflare Tunnel stopped."
-              exit 1
-            fi
-
-            sleep 60
-          done
-
-      - name: Cleanup
-        if: always()
-        run: |
-          echo "Stopping Cloudflare Tunnel..."
-
-          tmux kill-session -t cloudflare-tunnel 2>/dev/null || true
-          sudo pkill cloudflared 2>/dev/null || true
-
-          echo "Cleanup completed."
+    - name: Cleanup
+      if: always()
+      run: |
+        sudo pkill cloudflared 2>/dev/null || true
+        
