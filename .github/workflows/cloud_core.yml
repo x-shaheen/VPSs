@@ -5,12 +5,12 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 */6 * * *' # إعادة تشغيل أوتوماتيكية كل 6 ساعات لضمان عمل السيرفر بلا انقطاع
+    - cron: '0 */6 * * *'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # أقصى مدة تشغيل مدعومة للجلسة الواحدة
+    timeout-minutes: 360
 
     steps:
     - name: Initialize Cloud Server
@@ -21,20 +21,21 @@ jobs:
         echo "=========================================="
         sudo systemctl start docker
         sudo systemctl enable docker
-        
-        echo "تثبيت الأدوات المساعدة المطلوبة..."
         sudo apt-get update && sudo apt-get install -y curl tmux
 
-    - name: Install Cloudflare Tunnel
+    - name: Install Cloudflare Tunnel (Official Repository)
       run: |
         set -e
-        echo "جاري تحميل أداة النفق الآمنة من كلود فلير..."
-        curl -L --output cloudflared.deb https://github.com
+        echo "تثبيت مستودع كلود فلير الرسمي والآمن..."
+        sudo mkdir -p /usr/share/keyrings
+        curl -fsSL https://cloudflare.com | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
         
-        echo "تثبيت الحزمة على نظام الخادم الخام..."
-        sudo dpkg -i cloudflared.deb
+        echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://cloudflare.com jammy main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
         
-        echo "التحقق من إصدار أداة النفق:"
+        echo "تحديث حزم النظام وتثبيت أداة cloudflared..."
+        sudo apt-get update && sudo apt-get install -y cloudflared
+        
+        echo "التحقق من نجاح التثبيت البرمجي:"
         cloudflared --version
 
     - name: Start Cloudflare Tunnel
@@ -61,14 +62,10 @@ jobs:
         echo "=========================================="
         echo " 🔥 الخادم السحابي الخام نشط ومتصل الآن 🔥 "
         echo "=========================================="
-        echo "المواصفات: بيئة Ubuntu مع تشغيل كامل لـ Docker"
-        echo "=========================================="
         
-        # حلقة تكرار ذكية لمراقبة استقرار النفق وإبقاء السيرفر حياً
         for i in {1..350}; do
           echo "⏰ نبض السيرفر مستمر بنجاح... الوقت الحالي: $(date)"
           
-          # التحقق التلقائي للتأكد من عدم توقف عملية النفق بالخطأ
           if ! pgrep cloudflared > /dev/null; then
             echo "⚠️ تنبيه: تم رصد توقف النفق. جاري إعادة التشغيل الفوري..."
             sudo nohup cloudflared tunnel run --token "$TUNNEL_TOKEN" > cloudflared.log 2>&1 &
