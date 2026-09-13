@@ -1,14 +1,7 @@
 {
-  "name": "vpss",
-  "main": "src/index.js",
+  "name": "edge-kernel-vps",
+  "main": "src/entry.wasm",
   "compatibility_date": "2026-09-13",
-  "kv_namespaces": [
-    {
-      "binding": "MY_DATABASE",
-      "id": "6dca2ecf626b401fa34c1c6a04164aec"
-    }
-  ],
-  "observability": {
-    "enabled": true
-  }
+  "usage_model": "bundled" 
 }
+
