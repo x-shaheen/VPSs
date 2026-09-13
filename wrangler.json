@@ -1,7 +1,18 @@
 {
-  "name": "edge-kernel-vps",
-  "main": "src/entry.wasm",
+  "name": "t-cloud-control",
+  "main": "src/index.js",
   "compatibility_date": "2026-09-13",
-  "usage_model": "bundled" 
-}
 
+  "workers_dev": true,
+
+  "vars": {
+    "SERVER_DOMAIN": "shaheen94s.mooo.com"
+  },
+
+  "kv_namespaces": [
+    {
+      "binding": "MY_DATABASE",
+      "id": "YOUR_KV_NAMESPACE_ID"
+    }
+  ]
+}
