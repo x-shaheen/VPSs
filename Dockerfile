@@ -1,6 +1,62 @@
-FROM ubuntu:22.04
-RUN apt-get update && apt-get install -y curl wget git net-tools
-# تجهيز بيئة تشغيل مشاريعك الخارقة داخل جذر الحاوية
-EXPOSE 80 443
-CMD ["bash"]
+FROM ubuntu:24.04
 
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+RUN apt-get update && apt-get install -y \
+    bash \
+    curl \
+    wget \
+    git \
+    sudo \
+    ca-certificates \
+    openssh-server \
+    net-tools \
+    iproute2 \
+    iputils-ping \
+    procps \
+    htop \
+    nano \
+    vim \
+    python3 \
+    python3-pip \
+    unzip \
+    zip \
+    tar \
+    gzip \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# SSH
+RUN mkdir -p /run/sshd
+
+# مستخدم الخادم
+RUN useradd \
+    -m \
+    -s /bin/bash \
+    cloud
+
+RUN echo "cloud ALL=(ALL) NOPASSWD:ALL" \
+    > /etc/sudoers.d/cloud
+
+RUN chmod 0440 /etc/sudoers.d/cloud
+
+# إعداد SSH
+RUN sed -i \
+    's/#PermitRootLogin prohibit-password/PermitRootLogin no/' \
+    /etc/ssh/sshd_config
+
+RUN sed -i \
+    's/#PasswordAuthentication yes/PasswordAuthentication no/' \
+    /etc/ssh/sshd_config
+
+WORKDIR /workspace
+
+COPY start-server.sh /usr/local/bin/start-server.sh
+
+RUN chmod +x /usr/local/bin/start-server.sh
+
+EXPOSE 22
+EXPOSE 8080
+
+CMD ["/usr/local/bin/start-server.sh"]
