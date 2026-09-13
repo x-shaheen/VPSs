@@ -17,18 +17,12 @@ jobs:
       - name: Initialize Cloud Server
         run: |
           set -e
-
-          echo "Updating system..."
-          sudo apt-get update
-
-          echo "Installing required packages..."
-          sudo apt-get install -y \
-            docker.io \
-            tmux \
-            curl
-
-          echo "Docker version:"
-          docker --version
+          echo "Starting Pre-installed Docker Service..."
+          sudo systemctl start docker
+          sudo systemctl enable docker
+          
+          echo "Installing required utility packages..."
+          sudo apt-get update && sudo apt-get install -y tmux curl
 
       - name: Install Cloudflare Tunnel
         run: |
@@ -78,10 +72,6 @@ jobs:
           echo "Cloud server is now running."
           echo "======================================"
 
-          echo "Docker:"
-          sudo systemctl start docker
-          sudo systemctl enable docker
-
           echo "Docker status:"
           sudo systemctl --no-pager status docker || true
 
@@ -106,7 +96,6 @@ jobs:
           echo "Stopping Cloudflare Tunnel..."
 
           tmux kill-session -t cloudflare-tunnel 2>/dev/null || true
-
           sudo pkill cloudflared 2>/dev/null || true
 
           echo "Cleanup completed."
