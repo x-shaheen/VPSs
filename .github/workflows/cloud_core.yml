@@ -3,7 +3,7 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '0 */6 * * *' # إعادة تشغيل أوتوماتيكية كل 6 ساعات لضمان بقائه حياً مدى الحياة
+    - cron: '0 */6 * * *'
 
 jobs:
   build:
@@ -16,17 +16,13 @@ jobs:
         
     - name: Inject Cloudflare Tunnel (Secure Routing)
       run: |
-        # تحميل أداة النفق المشفر من كلود فلير لربط السيرفر برابطك الخاص
         curl -L --output cloudflared.deb https://github.com
         sudo dpkg -i cloudflared.deb
         
-        # تشغيل النفق في الخلفية باستخدام التوكن الخاص بك
-        # (يتم ربطه برابطك ://mooo.com من لوحة تحكم كلود فلير Tunnel)
         tmux new-session -d -s tunnel 'cloudflared tunnel run --token ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}'
         
     - name: Keep-Alive Micro-Kernel Engine
       run: |
         echo "السيرفر السحابي الخارق يعمل الآن بأقصى طاقة..."
-        # سكربت صامت لمنع خادم جيت هاب من الإغلاق ليدوم الخادم طويلاً
-        sleep 21600 
+        sleep 21600
         
